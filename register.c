@@ -9,7 +9,8 @@ uint32_t registers[REGISTER_LEN];
 // the unique id - stored in the eeprom, modified during program load into mcu
 uint8_t eeprom_register_addr[PERM_REGISTER_LEN * 4] EEMEM = {
     // register 0
-    0x00, 0x00, 0x00, CANARD_BROADCAST_NODE_ID,
+//    CANARD_BROADCAST_NODE_ID, 0x00, 0x00, 0x00,
+    0x03, 0x00, 0x00, 0x00,
     // register 1 - uavcan bus speed
     0x90, 0xd0, 0x03, 0x00,
     // register 2 - first qtr of unique id
@@ -38,9 +39,11 @@ void write_registers_eeprom(void)
     eeprom_write_block(registers, eeprom_register_addr, PERM_REGISTER_LEN * 4);
 }
 
-uint8_t get_register(int regnum, uint32_t mask, int shift)
+uint8_t get_register(int regnum, int shift)
 {
-    return (uint8_t)((registers[regnum] & mask) >> shift);
+    uint8_t* addr = (uint8_t*)&registers[regnum];
+    addr += shift;
+    return *addr;
 }
 
 void set_register(int regnum, int shift, uint8_t val)

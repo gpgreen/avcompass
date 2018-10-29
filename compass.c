@@ -18,7 +18,6 @@
  */
 
 #include "defs.h"
-#include <stdio.h>
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <util/delay.h>
@@ -34,17 +33,13 @@
 
 /*-----------------------------------------------------------------------*/
 
-// serial port input/output stream
-static FILE uart_ostr = FDEV_SETUP_STREAM(uart_putchar, NULL, _FDEV_SETUP_WRITE);
-static FILE uart_istr = FDEV_SETUP_STREAM(NULL, uart_getchar, _FDEV_SETUP_READ);
-
 // timer flags
 
 // 10 hz timer flag
 volatile uint8_t g_timer10_set;
 
-// global error code
-volatile uint8_t errcode;
+// 1 hz timer flag
+volatile uint8_t g_timer1hz_set;
 
 // the compass device
 struct hmc5883l_dev_t compass_dev;
@@ -54,7 +49,7 @@ struct hmc5883l_dev_t compass_dev;
 // output stuff to uart
 
 static char buf[512];
-void uart_out(const char* str, ...)
+void uart_printf(const char* str, ...)
 {
     va_list argptr;
     va_start(argptr, str);
@@ -67,7 +62,7 @@ void uart_out(const char* str, ...)
     }
 }
 
-void uart_out_P(const char* str, ...)
+void uart_printf_P(const char* str, ...)
 {
     va_list argptr;
     va_start(argptr, str);
@@ -88,6 +83,7 @@ void led4_on(void)
 {
 	PORT_LED4 |= _BV(P_LED4);
 }
+
 void led4_off(void)
 {
 	PORT_LED4 &= ~_BV(P_LED4);
@@ -99,6 +95,7 @@ void led5_on(void)
 {
 	PORT_LED5 |= _BV(P_LED5);
 }
+
 void led5_off(void)
 {
 	PORT_LED5 &= ~_BV(P_LED5);
@@ -109,7 +106,7 @@ void led5_off(void)
 #ifndef NDEBUG
 void __compass_assert(const char* msg, const char* file, int line)
 {
-    uart_out_P(PSTR("Assertion failed: %s at %s, line %d\nexecution halted\n"), msg, file, line);
+    uart_printf_P(PSTR("Assertion failed: %s at %s, line %d\nexecution halted\n"), msg, file, line);
     failed(1);
 }
 #endif
@@ -121,7 +118,6 @@ void __compass_assert(const char* msg, const char* file, int line)
 void
 failed(uint8_t err)
 {
-	errcode = err;
 	uint8_t count = 0;
 	uint8_t pause = 0;
     int delay = 2;
@@ -152,7 +148,7 @@ failed(uint8_t err)
 					led4_on();
                     led5_on();
                 }
-				if (++count == errcode * 2)
+				if (++count == err * 2)
                 {
 					pause = 10;
 					count = 0;
@@ -196,36 +192,27 @@ ioinit(void)
 
 	// setup the serial hardware
 	uart_init();
-#if 0
-    uart_putchar('H', stdout);
-    uart_putchar('e', stdout);
-    uart_putchar('l', stdout);
-    uart_putchar('l', stdout);
-    uart_putchar('o', stdout);
-    uart_putchar('!', stdout);
-    uart_putchar('\n', stdout);
-#endif
     
-    uart_out_P(PSTR("Compass\nHardware: %d Software: %d.%d\nName: %s\n-------------------------\n"),
+    uart_printf_P(PSTR("\nCompass\nHardware: %d Software: %d.%d\nName: %s\n-----------------------------\n"),
                HARDWARE_REVISION, APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_NODE_NAME);
 
     // print out registers
-    uart_out_P(PSTR("Contents of registers:\n"));
+    uart_printf_P(PSTR("Contents of registers:\n"));
     for (int i=0; i<REGISTER_LEN; ++i)
     {
-        uart_out("reg[%02d]: ", i);
+        uart_printf("reg[%02d]: ", i);
         uint8_t* byte = (uint8_t*)(&registers[i]);
         for (int j=0; j<4; ++j)
         {
-            uart_out("%02x,", *(byte + j));
+            uart_printf("%02x,", *(byte + j));
         }
-        uart_out("\n");
+        uart_printf("\n");
     }
-    uart_out("\n");
+    uart_printf("\n");
 
 	// i2c hardware setup
 	i2c_init();
-	uart_out_P(PSTR("i2c initialized\n"));
+	uart_printf_P(PSTR("i2c initialized\n"));
 
     // setup the magnetometer
     if (hmc5883l_init() == HMC5883L_FAIL)
@@ -233,7 +220,7 @@ ioinit(void)
         set_register(MAGNETOMETER_ENABLED_REG, MAGNETOMETER_ENABLED_SHIFT, 0);
 		failed(1);
     }
-	uart_out_P(PSTR("hmc5883l initialized\n"));
+	uart_printf_P(PSTR("hmc5883l initialized\n"));
 
     // run the self test
     if (hmc5883l_self_test())
@@ -242,18 +229,26 @@ ioinit(void)
 		failed(2);
     }
     set_register(MAGNETOMETER_ENABLED_REG, MAGNETOMETER_ENABLED_SHIFT, 1);
-	uart_out_P(PSTR("hmc5883l self-test complete\n"));
+	uart_printf_P(PSTR("hmc5883l self-test complete\n"));
 
     uint32_t bus_speed = get_register_u32(UAVCAN_BUS_SPEED_REG);
-    uart_out_P(PSTR("can bus speed:%lu\n"), bus_speed);
-    
-    int err = initializeCanard();
+    uart_printf_P(PSTR("can bus speed:%lu\n"), bus_speed);
+
+    int err = initializeCanard(bus_speed);
     if (err)
     {
-        uart_out_P(PSTR("can init failed err:%d\n"), err);
+        uart_printf_P(PSTR("can init failed err:%d\n"), err);
         failed(4);
     }
-	uart_out_P(PSTR("can init complete\nioinit complete\n"));
+	uart_printf_P(PSTR("can init complete\n"));
+
+    uint8_t nodeid = get_register(UAVCAN_NODE_ID_REG, UAVCAN_NODE_ID_SHIFT);
+    uint8_t state = get_register(COMPASS_STATE_REG, COMPASS_STATE_SHIFT);
+    uint8_t health = get_register(UAVCAN_NODE_HEALTH_REG, UAVCAN_NODE_HEALTH_SHIFT);
+
+    uart_printf_P(PSTR("node id: %d can state:%d can health:%d\n"), nodeid, state, health);
+    
+	uart_printf_P(PSTR("ioinit complete\n"));
 
     led4_off();
 }
@@ -293,10 +288,6 @@ int
 main(void)
 {
     system_start();
-    
-	// std streams go to uart
-    stdout = stderr = &uart_ostr;
-    stdin = &uart_istr;
 
     initialize_registers();
 
@@ -304,7 +295,7 @@ main(void)
     
     ioinit();
 
-    //processNodeId();
+    processNodeId();
 
 	int calc_flag = 0;
 	
@@ -314,9 +305,8 @@ main(void)
         if (g_timer10_set)
         {
             g_timer10_set = 0;
-            #if 0
-            int cenabled = get_register(MAGNETOMETER_ENABLED_REG, MAGNETOMETER_ENABLED_MASK,
-                                        MAGNETOMETER_ENABLED_SHIFT);
+
+            int cenabled = get_register(MAGNETOMETER_ENABLED_REG, MAGNETOMETER_ENABLED_SHIFT);
 			if (cenabled && (hmc5883l_read_data(&compass_dev) != HMC5883L_OK))
 				failed(8);
 
@@ -328,17 +318,25 @@ main(void)
             {
 				calc_flag = 1;
 			}
-            #endif
         }
+
+        // 1 hz timer
+        if (g_timer1hz_set)
+        {
+            g_timer1hz_set = 0;
+
+            process1HzTasks(jiffie());
+        }
+        
 		// calc_flag set, do the magnetic heading
 		if (calc_flag)
 		{
 			calc_flag = 0;
-			//compass_heading(0.0, 0.0);
+			compass_heading(0.0, 0.0);
 		}
 
         // every loop
-        //processTxRxOnce();
+        processTxRxOnce();
         
     }
     return 0;
@@ -351,17 +349,13 @@ main(void)
  */
 ISR(TIMER1_COMPA_vect)
 {
-    static int on = 0;
-    if (on)
-    {
-        led5_on();
-        on = 0;
-    } else {
-        led5_off();
-        on = 1;
-    }
-    
+    static int count = 0;
     g_timer10_set = 1;
+    if (++count == 10)
+    {
+        g_timer1hz_set = 1;
+        count = 0;
+    }
 }
 
 /*-----------------------------------------------------------------------*/

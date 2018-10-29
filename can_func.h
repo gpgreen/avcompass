@@ -13,7 +13,7 @@
 
 extern CanardInstance* instance;
 
-extern int initializeCanard(void);
+extern int initializeCanard(uint32_t bus_speed);
 
 extern bool shouldAcceptTransfer(const CanardInstance* ins,
                                  uint64_t* out_data_type_signature,

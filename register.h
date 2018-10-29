@@ -41,7 +41,7 @@ extern uint32_t registers[REGISTER_LEN];
 #define UAVCAN_NODE_HEALTH_SHIFT              8
 
 #define MAGNETOMETER_ENABLED_REG              6
-#define MAGNETOMETER_ENABLED_MASK             0xff0000
+#define MAGNETOMETER_ENABLED_MASK             0xff0000UL
 #define MAGNETOMETER_ENABLED_SHIFT            16
 
 #define MAGNETIC_HEADING_REG                  7
@@ -49,7 +49,7 @@ extern uint32_t registers[REGISTER_LEN];
 #define RAW_MAG_SENSOR_XY_REG                 8
 #define RAW_MAG_SENSOR_X_MASK                 0xffff
 #define RAW_MAG_SENSOR_X_SHIFT                0
-#define RAW_MAG_SENSOR_Y_MASK                 0xffff0000
+#define RAW_MAG_SENSOR_Y_MASK                 0xffff0000UL
 #define RAW_MAG_SENSOR_Y_SHIFT                16
 
 #define RAW_MAG_SENSOR_Z_REG                  9
@@ -69,7 +69,7 @@ extern uint32_t registers[REGISTER_LEN];
 extern void initialize_registers(void);
 extern void write_registers_eeprom(void);
 
-extern uint8_t get_register(int regnum, uint32_t mask, int shift);
+extern uint8_t get_register(int regnum, int shift);
 extern void set_register(int regnum, int shift, uint8_t val);
 
 extern int16_t get_register_i16(int regnum, uint32_t mask, int shift);
