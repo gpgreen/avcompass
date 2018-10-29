@@ -9,13 +9,6 @@ void gpio_setup(void)
 	DDR_LED4 |= _BV(P_LED4);
 	DDR_LED5 |= _BV(P_LED5);
 
-	// MCP2515 hardware
-	
-	// CAN_CS, output, level hi
-	DDR_CANCS |= _BV(P_CANCS);
-	PORT_CANCS |= _BV(P_CANCS);
-
-	// CAN_INT, input, no level change
-	DDR_CANINT &= ~(_BV(P_CANINT));
-
+    // setup the SCK led, in case we can't initialize the MCP2515
+    DDRB |= _BV(7);
 }

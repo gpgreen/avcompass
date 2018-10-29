@@ -1,0 +1,11 @@
+# .gitignore for compass
+.dep
+*~
+*.lst
+*.o
+*.eep
+*.elf
+*.hex
+*.sym
+*.lss
+*.map

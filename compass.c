@@ -18,25 +18,23 @@
  */
 
 #include "defs.h"
+#include <stdio.h>
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <util/delay.h>
 #include "i2cmaster.h"
 #include "gpio.h"
-#include <stdio.h>
 #include <math.h>
+#include "register.h"
 #include "uart.h"
 #include "timer.h"
-#include "spi.h"
 #include "hmc5883l.h"
-#include "canaero.h"
-#include "canaeromsg.h"
-#include "canaero_filters.h"
 #include "globals.h"
+#include "can_func.h"
 
 /*-----------------------------------------------------------------------*/
 
-// set serial port to stdio
+// serial port input/output stream
 static FILE uart_ostr = FDEV_SETUP_STREAM(uart_putchar, NULL, _FDEV_SETUP_WRITE);
 static FILE uart_istr = FDEV_SETUP_STREAM(NULL, uart_getchar, _FDEV_SETUP_READ);
 
@@ -45,23 +43,42 @@ static FILE uart_istr = FDEV_SETUP_STREAM(NULL, uart_getchar, _FDEV_SETUP_READ);
 // 10 hz timer flag
 volatile uint8_t g_timer10_set;
 
-// CAN controller flags
-volatile uint8_t g_can_int_set;	/* set when CAN controller interrupt signaled */
-
 // global error code
 volatile uint8_t errcode;
 
-// the can stack initialization struct
-canaero_init_t g_ci;
+// the compass device
+struct hmc5883l_dev_t compass_dev;
 
-// the state
-enum state g_state;
+/*-----------------------------------------------------------------------*/
 
-// compass enabled
-int g_compass_enabled;
+// output stuff to uart
 
-// the magnetic compass heading
-float g_magnetic_heading;
+static char buf[512];
+void uart_out(const char* str, ...)
+{
+    va_list argptr;
+    va_start(argptr, str);
+    vsnprintf(buf, 512, str, argptr);
+    char* p = buf;
+    while (*p != 0)
+    {
+        uart_putchar(*p, stdout);
+        ++p;
+    }
+}
+
+void uart_out_P(const char* str, ...)
+{
+    va_list argptr;
+    va_start(argptr, str);
+    vsnprintf_P(buf, 512, str, argptr);
+    char* p = buf;
+    while (*p != 0)
+    {
+        uart_putchar(*p, stdout);
+        ++p;
+    }
+}
 
 /*-----------------------------------------------------------------------*/
 
@@ -89,28 +106,13 @@ void led5_off(void)
 
 /*-----------------------------------------------------------------------*/
 
-// this function is called if CAN doesn't work, otherwise
-// use the failed fn below
-// blinks continuously at 10 hz to show offline
-void
-offline(void)
+#ifndef NDEBUG
+void __compass_assert(const char* msg, const char* file, int line)
 {
-	led5_off();
-	uint8_t on = -1;
-	led4_on();
-	while (1) {
-		// 10 hz timer
-		if (g_timer10_set)
-		{
-			g_timer10_set = 0;
-			if (on)
-				led4_off();
-			else
-				led4_on();
-			on = on? 0 : -1;
-		}
-	}
+    uart_out_P(PSTR("Assertion failed: %s at %s, line %d\nexecution halted\n"), msg, file, line);
+    failed(1);
 }
+#endif
 
 /*-----------------------------------------------------------------------*/
 
@@ -119,30 +121,56 @@ offline(void)
 void
 failed(uint8_t err)
 {
-	led5_off();
 	errcode = err;
 	uint8_t count = 0;
 	uint8_t pause = 0;
+    int delay = 2;
 	led4_on();
-	while (1) {
+    led5_on();
+	while (1)
+    {
 		// 10 hz timer
 		if (g_timer10_set)
 		{
 			g_timer10_set = 0;
-			if (pause) {
+            if (delay--)
+                continue;
+            delay = 2;
+			if (pause)
+            {
 				--pause;
-			} else {
+			}
+            else
+            {
 				if (bit_is_set(count, 0))
-					led4_off();
-				else
+                {
+                    led4_off();
+					led5_off();
+                }
+                else
+                {
 					led4_on();
-				if (++count == errcode * 2) {
-					pause = 5;
+                    led5_on();
+                }
+				if (++count == errcode * 2)
+                {
+					pause = 10;
 					count = 0;
 				}
 			}
 		}
 	}
+}
+
+/*-----------------------------------------------------------------------*/
+
+void
+system_start(void)
+{
+    // first set the clock prescaler change enable
+	CLKPR = _BV(CLKPCE);
+	// now set the clock prescaler to clk / 2
+	CLKPR = _BV(CLKPS0);
 }
 
 /*-----------------------------------------------------------------------*/
@@ -155,7 +183,6 @@ ioinit(void)
 	timer_init();
 
 	led4_on();
-	led5_on();
 	
     // setup the 10 hz timer
     // WGM12 = 1, CTC, OCR1A
@@ -169,64 +196,66 @@ ioinit(void)
 
 	// setup the serial hardware
 	uart_init();
+#if 0
+    uart_putchar('H', stdout);
+    uart_putchar('e', stdout);
+    uart_putchar('l', stdout);
+    uart_putchar('l', stdout);
+    uart_putchar('o', stdout);
+    uart_putchar('!', stdout);
+    uart_putchar('\n', stdout);
+#endif
+    
+    uart_out_P(PSTR("Compass\nHardware: %d Software: %d.%d\nName: %s\n-------------------------\n"),
+               HARDWARE_REVISION, APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_NODE_NAME);
 
-	puts_P(PSTR("Compass"));
-	printf_P(PSTR("Hardware: %d Software: %d\n-------------------------\n"),
-			 HARDWARE_REVISION, SOFTWARE_REVISION);
-	
-	// spi needs to be setup first
-	spi_init();
-
-	puts_P(PSTR("spi initialized."));
+    // print out registers
+    uart_out_P(PSTR("Contents of registers:\n"));
+    for (int i=0; i<REGISTER_LEN; ++i)
+    {
+        uart_out("reg[%02d]: ", i);
+        uint8_t* byte = (uint8_t*)(&registers[i]);
+        for (int j=0; j<4; ++j)
+        {
+            uart_out("%02x,", *(byte + j));
+        }
+        uart_out("\n");
+    }
+    uart_out("\n");
 
 	// i2c hardware setup
 	i2c_init();
-	
-	puts_P(PSTR("i2c initialized."));
+	uart_out_P(PSTR("i2c initialized\n"));
 
-	// setup the can initialization struct
-	g_ci.can_settings.speed_setting = CAN_250KBPS;
-	g_ci.can_settings.loopback_on = 0;
-	g_ci.can_settings.tx_wait_ms = 20;
-	g_ci.node_id = 3;
-	g_ci.svc_channel = 0;
-	g_ci.nod_msg_templates = nod_msg_templates;
-	g_ci.num_nod_templates = num_nod_templates;
-	g_ci.nsl_dispatcher_fn_array = nsl_dispatcher_fn_array;
-	g_ci.incoming_msg_dispatcher_fn = 0;
-
-	// setup the filter's
-	canaero_high_priority_service_filters(&g_ci);
-	
-	// now do the CAN stack
-	errcode = canaero_init(&g_ci);
-	if (errcode == CAN_FAILINIT)
-		offline();
-	led4_off();
-
-	puts_P(PSTR("can initialized."));
-
-	// self test the CAN stack
-	errcode = canaero_self_test();
-	if (errcode != CAN_OK)
-		offline();
-
-	puts_P(PSTR("canaero self-test complete."));
-	
     // setup the magnetometer
-    hmc5883l_init();
-
-	puts_P(PSTR("hmc5883l initialized."));
+    if (hmc5883l_init() == HMC5883L_FAIL)
+    {
+        set_register(MAGNETOMETER_ENABLED_REG, MAGNETOMETER_ENABLED_SHIFT, 0);
+		failed(1);
+    }
+	uart_out_P(PSTR("hmc5883l initialized\n"));
 
     // run the self test
     if (hmc5883l_self_test())
+    {
+        set_register(MAGNETOMETER_ENABLED_REG, MAGNETOMETER_ENABLED_SHIFT, 0);
 		failed(2);
+    }
+    set_register(MAGNETOMETER_ENABLED_REG, MAGNETOMETER_ENABLED_SHIFT, 1);
+	uart_out_P(PSTR("hmc5883l self-test complete\n"));
 
-	puts_P(PSTR("hmc5883l self-test complete."));
-	
-	puts_P(PSTR("ioinit complete."));
+    uint32_t bus_speed = get_register_u32(UAVCAN_BUS_SPEED_REG);
+    uart_out_P(PSTR("can bus speed:%lu\n"), bus_speed);
+    
+    int err = initializeCanard();
+    if (err)
+    {
+        uart_out_P(PSTR("can init failed err:%d\n"), err);
+        failed(4);
+    }
+	uart_out_P(PSTR("can init complete\nioinit complete\n"));
 
-	led5_off();
+    led4_off();
 }
 
 /*-----------------------------------------------------------------------*/
@@ -238,9 +267,9 @@ void compass_heading(float roll, float pitch)
 	float cos_pitch = cos(pitch);
 	float sin_pitch = sin(pitch);
 
-	float x = -hmc5883l_raw_mag_data(0);
-	float y = hmc5883l_raw_mag_data(1);
-	float z = -hmc5883l_raw_mag_data(2);
+	float x = -hmc5883l_raw_mag_data(&compass_dev, 0);
+	float y = hmc5883l_raw_mag_data(&compass_dev, 1);
+	float z = -hmc5883l_raw_mag_data(&compass_dev, 2);
 	
 	// tilt compensated mag x
 	float mag_x = x * cos_pitch + y * sin_roll * sin_pitch
@@ -249,12 +278,13 @@ void compass_heading(float roll, float pitch)
 	float mag_y = y * cos_roll - z * sin_roll;
 
 	// magnetic heading
-	g_magnetic_heading = atan2(-mag_y, mag_x);
+	float hdg = atan2(-mag_y, mag_x);
 	// convert to degrees
-	g_magnetic_heading *= 180.0 / M_PI;
+	hdg *= 180.0 / M_PI;
 	// now convert to range 0 - 360
-	if (g_magnetic_heading < 0)
-		g_magnetic_heading += 360.0;
+	if (hdg < 0)
+		hdg += 360.0;
+    set_register_float(MAGNETIC_HEADING_REG, hdg);
 }
 
 /*-----------------------------------------------------------------------*/
@@ -262,76 +292,56 @@ void compass_heading(float roll, float pitch)
 int
 main(void)
 {
-	g_state = INIT;
-	
-	// first set the clock prescaler change enable
-	CLKPR = _BV(CLKPCE);
-	// now set the clock prescaler to clk/2
-	CLKPR = _BV(CLKPS0);
+    system_start();
+    
+	// std streams go to uart
+    stdout = stderr = &uart_ostr;
+    stdin = &uart_istr;
 
-	// stdout is the uart
-	stdout = &uart_ostr;
-	// stdin is the uart
-	stdin = &uart_istr;
-	
+    initialize_registers();
+
+    sei();
+    
     ioinit();
-	sei();
 
-	g_state = LISTEN;
+    //processNodeId();
 
 	int calc_flag = 0;
 	
     while(1)
     {
-		// write the eeprom if necessary
-		canaero_write_eeprom_task();
-
         // 10 hz timer
         if (g_timer10_set)
         {
             g_timer10_set = 0;
+            #if 0
+            int cenabled = get_register(MAGNETOMETER_ENABLED_REG, MAGNETOMETER_ENABLED_MASK,
+                                        MAGNETOMETER_ENABLED_SHIFT);
+			if (cenabled && (hmc5883l_read_data(&compass_dev) != HMC5883L_OK))
+				failed(8);
 
-			if (g_compass_enabled && (hmc5883l_read_data() != HMC5883L_OK))
-				failed(3);
-
-			if (g_state == ACTIVE && g_compass_enabled) {
-				canaero_send_messages(0, 3);
+            set_register_i16(RAW_MAG_SENSOR_XY_REG, RAW_MAG_SENSOR_X_SHIFT, compass_dev.raw_mag[0]);
+            set_register_i16(RAW_MAG_SENSOR_XY_REG, RAW_MAG_SENSOR_Y_SHIFT, compass_dev.raw_mag[1]);
+            set_register_i16(RAW_MAG_SENSOR_Z_REG, RAW_MAG_SENSOR_Z_SHIFT, compass_dev.raw_mag[2]);
+            
+			if (cenabled)
+            {
 				calc_flag = 1;
 			}
-        }
-        // can controller interrupt
-        if (g_can_int_set)
-        {
-            g_can_int_set = 0;
-
-            // clear the interrupt flag on the device
-			canaero_handle_interrupt();
-
-			// poll for received messages
-			canaero_poll_messages();
+            #endif
         }
 		// calc_flag set, do the magnetic heading
 		if (calc_flag)
 		{
 			calc_flag = 0;
-			compass_heading(0.0, 0.0);
-			canaero_send_messages(3, 4);
+			//compass_heading(0.0, 0.0);
 		}
+
+        // every loop
+        //processTxRxOnce();
+        
     }
     return 0;
-}
-
-/*-----------------------------------------------------------------------*/
-
-/*
- * Pin Change Interrupt 2
- * Called on change of CAN_INT
- */
-ISR(PCINT2_vect)
-{
-	// see if CAN_INT is lo, ie we got a falling edge
-	if (bit_is_clear(PIN_CANINT, P_CANINT))
-		g_can_int_set = 1;
 }
 
 /*-----------------------------------------------------------------------*/
@@ -341,6 +351,16 @@ ISR(PCINT2_vect)
  */
 ISR(TIMER1_COMPA_vect)
 {
+    static int on = 0;
+    if (on)
+    {
+        led5_on();
+        on = 0;
+    } else {
+        led5_off();
+        on = 1;
+    }
+    
     g_timer10_set = 1;
 }
 

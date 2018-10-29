@@ -83,24 +83,19 @@ OBJDIR = .
 
 # VPATH
 #     Look for other sources, headers here
-VPATH = ../i2cmaster ../drivers ../canlibrary
+VPATH = ../libs/avr_drivers/drivers ../libs/avr_drivers/i2cmaster ../libs/avr_drivers/utils ../libs/libcanard ../libs/libcanard/drivers/avr/
 
 # List C source files here. (C dependencies are automatically generated.)
 SRC = $(TARGET).c \
 	gpio.c \
 	uart.c \
-	spi.c \
 	twimaster.c \
 	timer.c \
-	mcp2515.c \
-	can.c \
-	canaero.c \
-	canaeromsg.c \
-	canaero_nis.c \
-	canaero_ids.c \
-	canaero_bss.c \
-	canaero_filters.c \
 	hmc5883l.c \
+	can_func.c \
+	canard.c \
+	canard_avr.c \
+	register.c
 
 # List C++ source files here. (C dependencies are automatically generated.)
 CPPSRC =
@@ -134,7 +129,8 @@ DEBUG = stabs
 #     Each directory must be seperated by a space.
 #     Use forward slashes for directory separators.
 #     For a directory that has spaces, enclose it in quotes.
-EXTRAINCDIRS = ../i2cmaster ../drivers ../canlibrary
+EXTRAINCDIRS = ../libs/avr_drivers/drivers ../libs/avr_drivers/i2cmaster ../libs/avr_drivers/utils \
+	../libs/libcanard ../libs/libcanard/drivers/avr ../libs/libcanard/drivers/avr/avr-can-lib
 
 
 # Compiler flag to set the C Standard level.
@@ -233,9 +229,9 @@ PRINTF_LIB_MIN = -Wl,-u,vfprintf -lprintf_min
 PRINTF_LIB_FLOAT = -Wl,-u,vfprintf -lprintf_flt
 
 # If this is left blank, then it will use the Standard printf version.
-PRINTF_LIB = 
+#PRINTF_LIB = 
 #PRINTF_LIB = $(PRINTF_LIB_MIN)
-#PRINTF_LIB = $(PRINTF_LIB_FLOAT)
+PRINTF_LIB = $(PRINTF_LIB_FLOAT)
 
 
 # Minimalistic scanf version
@@ -257,8 +253,9 @@ MATH_LIB = -lm
 #     Each directory must be seperated by a space.
 #     Use forward slashes for directory separators.
 #     For a directory that has spaces, enclose it in quotes.
-EXTRALIBDIRS =
+EXTRALIBDIRS = ../libs/libcanard/drivers/avr/avr-can-lib
 
+LIBCANARD = -lcan
 
 
 #---------------- External Memory Options ----------------
@@ -282,7 +279,7 @@ EXTMEMOPTS =
 LDFLAGS = -Wl,-Map=$(TARGET).map,--cref
 LDFLAGS += $(EXTMEMOPTS)
 LDFLAGS += $(patsubst %,-L%,$(EXTRALIBDIRS))
-LDFLAGS += $(PRINTF_LIB) $(SCANF_LIB) $(MATH_LIB)
+LDFLAGS += $(PRINTF_LIB) $(SCANF_LIB) $(MATH_LIB) $(LIBCANARD)
 #LDFLAGS += -T linker_script.x
 
 

@@ -12,43 +12,45 @@
  * Hardware and software revisions
  */
 #define HARDWARE_REVISION 2
-#define SOFTWARE_REVISION 1
+#define APP_VERSION_MAJOR                                            1
+#define APP_VERSION_MINOR                                            0
+#define APP_NODE_NAME                                                "com.bit-builder.compass"
 
 /*-----------------------------------------------------------------------*/
 
 /* functions available */
-#define HAVE_UART_DEVICE (1)
+#define HAVE_UART_DEVICE                                             1
 
 /* define baud rate for serial comm */
-#define BAUD 57600
+#define BAUD                                                         115200
+
+/* size of uart buffers */
+#define FIFO_SIZE                                                    64
 
 /*-----------------------------------------------------------------------*/
 
 /* DEBUGGING */
        
-// #define MCPDEBUG (1)
-// #define CANDEBUG (1)
-// #define CANAERODEBUG (1)
-// #define HMCDEBUG (1)
+// #define MCPDEBUG                                                  1
+// #define CANDEBUG                                                  1
+// #define CANAERODEBUG                                              1
+// #define HMCDEBUG                                                  1
 
 /*-----------------------------------------------------------------------*/
 
 /* LEDS */
 
-#define DDR_LED4    DDRB
-#define PORT_LED4   PORTB
-#define P_LED4      3
+#define DDR_LED4                                                     DDRB
+#define PORT_LED4                                                    PORTB
+#define P_LED4                                                       3
        
-#define DDR_LED5    DDRB
-#define PORT_LED5   PORTB
-#define P_LED5      4
+#define DDR_LED5                                                     DDRB
+#define PORT_LED5                                                    PORTB
+#define P_LED5                                                       4
        
 /*-----------------------------------------------------------------------*/
 
 /* MCP2515 */
-
-/* MCP clock */
-#define MCP2515_8MHZ (1)
 
 /* CS pin */
 #define DDR_CANCS   DDRA
