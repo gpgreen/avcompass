@@ -1,16 +1,4 @@
 /*
- * Fuse bits for AtMega644
- * Full swing oscillator, start up 16ck + 4.1ms, crystal occ, fast rising pwr
- * clock prescaler divide by 8
- * clock output on port b
- * serial programming enabled
- * brown-out at 4.3V
- * Low=0x27 Hi=0xd9 Ext=0xfc
- * avrdude settings:
- * -U lfuse:w:0x27:m -U hfuse:w:0xd9:m
- * -U efuse:w:0xfc:m
- * from http://www.engbedded.com/fusecalc/
- *
  * per the HMC5883L datasheet
  * X is facing backward, or away from the dsub connector
  * Y is to right wing, or right of dsub connector
@@ -21,9 +9,10 @@
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <util/delay.h>
+#include <math.h>
+
 #include "i2cmaster.h"
 #include "gpio.h"
-#include <math.h>
 #include "register.h"
 #include "uart.h"
 #include "timer.h"
@@ -41,8 +30,29 @@ volatile uint8_t g_timer10_set;
 // 1 hz timer flag
 volatile uint8_t g_timer1hz_set;
 
+/*-----------------------------------------------------------------------*/
+
 // the compass device
-struct hmc5883l_dev_t compass_dev;
+struct hmc5883l_dev_t compass_dev = {
+    .sensor_sign = {1, 1, 1},
+};
+
+
+/*-----------------------------------------------------------------------*/
+
+/*
+ * Timer compare output 1A interrupt
+ */
+ISR(TIMER1_COMPA_vect)
+{
+    static int count = 0;
+    g_timer10_set = 1;
+    if (++count == 10)
+    {
+        g_timer1hz_set = 1;
+        count = 0;
+    }
+}
 
 /*-----------------------------------------------------------------------*/
 
@@ -89,8 +99,6 @@ void led4_off(void)
 	PORT_LED4 &= ~_BV(P_LED4);
 }
 
-/*-----------------------------------------------------------------------*/
-
 void led5_on(void)
 {
 	PORT_LED5 |= _BV(P_LED5);
@@ -103,6 +111,7 @@ void led5_off(void)
 
 /*-----------------------------------------------------------------------*/
 
+// implementation of assert
 #ifndef NDEBUG
 void __compass_assert(const char* msg, const char* file, int line)
 {
@@ -245,14 +254,17 @@ ioinit(void)
     uint8_t nodeid = get_register(UAVCAN_NODE_ID_REG, UAVCAN_NODE_ID_SHIFT);
     uint8_t state = get_register(COMPASS_STATE_REG, COMPASS_STATE_SHIFT);
     uint8_t health = get_register(UAVCAN_NODE_HEALTH_REG, UAVCAN_NODE_HEALTH_SHIFT);
+    uint8_t sensor_id = get_register(MAGNETOMETER_SENSOR_ID_REG, MAGNETOMETER_SENSOR_ID_SHIFT);
 
-    uart_printf_P(PSTR("node id: %d can state:%d can health:%d\n"), nodeid, state, health);
+    uart_printf_P(PSTR("node id: %d can state:%d can health:%d sensor id:%d\n"), nodeid, state, health,
+        sensor_id);
     
 	uart_printf_P(PSTR("ioinit complete\n"));
 
     led4_off();
 }
 
+#if 0
 /*-----------------------------------------------------------------------*/
 
 void compass_heading(float roll, float pitch)
@@ -281,6 +293,7 @@ void compass_heading(float roll, float pitch)
 		hdg += 360.0;
     set_register_float(MAGNETIC_HEADING_REG, hdg);
 }
+#endif
 
 /*-----------------------------------------------------------------------*/
 
@@ -297,9 +310,9 @@ main(void)
 
     processNodeId();
 
-	int calc_flag = 0;
+	//int calc_flag = 0;
 	
-    while(1)
+    while (1)
     {
         // 10 hz timer
         if (g_timer10_set)
@@ -310,13 +323,14 @@ main(void)
 			if (cenabled && (hmc5883l_read_data(&compass_dev) != HMC5883L_OK))
 				failed(8);
 
-            set_register_i16(RAW_MAG_SENSOR_XY_REG, RAW_MAG_SENSOR_X_SHIFT, compass_dev.raw_mag[0]);
-            set_register_i16(RAW_MAG_SENSOR_XY_REG, RAW_MAG_SENSOR_Y_SHIFT, compass_dev.raw_mag[1]);
-            set_register_i16(RAW_MAG_SENSOR_Z_REG, RAW_MAG_SENSOR_Z_SHIFT, compass_dev.raw_mag[2]);
-            
+            set_register_float(RAW_MAG_SENSOR_X_REG, hmc5883l_raw_mag_data(&compass_dev, 0));
+            set_register_float(RAW_MAG_SENSOR_Y_REG, hmc5883l_raw_mag_data(&compass_dev, 1));
+            set_register_float(RAW_MAG_SENSOR_Z_REG, hmc5883l_raw_mag_data(&compass_dev, 2));
+
 			if (cenabled)
             {
-				calc_flag = 1;
+				//calc_flag = 1;
+                sendRawMagData();
 			}
         }
 
@@ -327,35 +341,21 @@ main(void)
 
             process1HzTasks(jiffie());
         }
-        
+
+#if 0
 		// calc_flag set, do the magnetic heading
 		if (calc_flag)
 		{
 			calc_flag = 0;
 			compass_heading(0.0, 0.0);
 		}
-
+#endif
+        
         // every loop
         processTxRxOnce();
         
     }
     return 0;
-}
-
-/*-----------------------------------------------------------------------*/
-
-/*
- * Timer compare output 1A interrupt
- */
-ISR(TIMER1_COMPA_vect)
-{
-    static int count = 0;
-    g_timer10_set = 1;
-    if (++count == 10)
-    {
-        g_timer1hz_set = 1;
-        count = 0;
-    }
 }
 
 /*-----------------------------------------------------------------------*/

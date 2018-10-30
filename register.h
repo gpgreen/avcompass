@@ -22,6 +22,10 @@ extern uint32_t registers[REGISTER_LEN];
 #define UAVCAN_NODE_ID_MASK                   0xff
 #define UAVCAN_NODE_ID_SHIFT                  0
 
+#define MAGNETOMETER_SENSOR_ID_REG            0
+#define MAGNETOMETER_SENSOR_ID_MASK           0xff00
+#define MAGNETOMETER_SENSOR_ID_SHIFT          8
+
 #define UAVCAN_BUS_SPEED_REG                  1
 
 #define UNIQUE_ID1_REG                        2
@@ -44,17 +48,11 @@ extern uint32_t registers[REGISTER_LEN];
 #define MAGNETOMETER_ENABLED_MASK             0xff0000UL
 #define MAGNETOMETER_ENABLED_SHIFT            16
 
-#define MAGNETIC_HEADING_REG                  7
+#define RAW_MAG_SENSOR_X_REG                  7
 
-#define RAW_MAG_SENSOR_XY_REG                 8
-#define RAW_MAG_SENSOR_X_MASK                 0xffff
-#define RAW_MAG_SENSOR_X_SHIFT                0
-#define RAW_MAG_SENSOR_Y_MASK                 0xffff0000UL
-#define RAW_MAG_SENSOR_Y_SHIFT                16
+#define RAW_MAG_SENSOR_Y_REG                  8
 
 #define RAW_MAG_SENSOR_Z_REG                  9
-#define RAW_MAG_SENSOR_Z_MASK                 0xffff
-#define RAW_MAG_SENSOR_Z_SHIFT                0
 
 // values encoded in registers
 

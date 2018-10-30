@@ -18,9 +18,9 @@
  * Some useful constants defined by the UAVCAN specification.
  * Data type signature values can be easily obtained with the script show_data_type_info.py
  */
-#define UAVCAN_EQUIPMENT_AIR_DATA_RAW_DATA_TYPE_ID                  1027
-#define UAVCAN_EQUIPMENT_AIR_DATA_RAW_DATA_TYPE_SIGNATURE           0xc77df38ba122f5da
-#define UAVCAN_EQUIPMENT_AIR_DATA_RAW_MAX_SIZE                      (397 / 8) + 1
+#define UAVCAN_AHRS_MAGNETIC_FIELD_STRENGTH2_TYPE_ID                  1002
+#define UAVCAN_AHRS_MAGNETIC_FIELD_STRENGTH2_TYPE_SIGNATURE           0xb6ac0c442430297e
+#define UAVCAN_AHRS_MAGNETIC_FIELD_STRENGTH2_RAW_MAX_SIZE             ((204 / 8) + 1)
 
 #define UAVCAN_NODE_ID_ALLOCATION_DATA_TYPE_ID                      1
 #define UAVCAN_NODE_ID_ALLOCATION_DATA_TYPE_SIGNATURE               0x0b2a812620a11d40
@@ -40,7 +40,7 @@
  * In simple applications it makes sense to make it static, but it is not necessary.
  */
 static CanardInstance canard;                       ///< The library instance
-static uint8_t canard_memory_pool[1024];            ///< Arena for memory allocation, used by the library
+static uint8_t canard_memory_pool[CANARD_MEMORY_POOL_SIZE];            ///< Arena for memory allocation, used by the library
 
 /*
  * Variables used for dynamic node ID allocation.
@@ -350,11 +350,10 @@ void process1HzTasks(uint64_t timestamp_usec)
  */
 void processTxRxOnce()
 {
-    static int tx_on = 0;
-    
     // Transmitting
     for (const CanardCANFrame* txf = NULL; (txf = canardPeekTxQueue(&canard)) != NULL;)
     {
+        led4_on();
         const int16_t tx_res = canardAVRTransmit(txf);
         if (tx_res < 0)         // Failure - drop the frame and report
         {
@@ -364,20 +363,14 @@ void processTxRxOnce()
         else if (tx_res > 0)    // Success - just drop the frame
         {
             canardPopTxQueue(&canard);
-            if (tx_on)
-                led4_off();
-            else
-                led4_on();
-            tx_on = tx_on ? 0 : 1;
         }
         else                    // Timeout - just exit and try again later
         {
             break;
         }
+        led4_off();
     }
 
-    static int rx_on = 0;
-    
     // Receiving
     CanardCANFrame rx_frame;
     const uint64_t timestamp = getMonotonicTimestampUSec();
@@ -388,12 +381,9 @@ void processTxRxOnce()
     }
     else if (rx_res > 0)        // Success - process the frame
     {
+        led5_on();
         canardHandleRxFrame(&canard, &rx_frame, timestamp);
-        if (rx_on)
-            led5_off();
-        else
-            led5_on();
-        rx_on = rx_on ? 0 : 1;
+        led5_off();
     }
     else
     {
@@ -481,33 +471,30 @@ void processNodeId()
 
 void sendRawMagData(void)
 {
-    uint8_t buffer[UAVCAN_EQUIPMENT_AIR_DATA_RAW_MAX_SIZE];
-    memset(buffer, 0, UAVCAN_EQUIPMENT_AIR_DATA_RAW_MAX_SIZE);
-    // skip flags
+    uint8_t buffer[UAVCAN_AHRS_MAGNETIC_FIELD_STRENGTH2_RAW_MAX_SIZE];
+    memset(buffer, 0, UAVCAN_AHRS_MAGNETIC_FIELD_STRENGTH2_RAW_MAX_SIZE);
+    // sensor_id
+    buffer[0] = get_register(MAGNETOMETER_SENSOR_ID_REG, MAGNETOMETER_SENSOR_ID_SHIFT);
+    
+    // magnetic_field_ga
+    uint16_t converted = canardConvertNativeFloatToFloat16(get_register_float(RAW_MAG_SENSOR_X_REG));
+    canardEncodeScalar(buffer, 1, 16, &converted);
+    converted = canardConvertNativeFloatToFloat16(get_register_float(RAW_MAG_SENSOR_Y_REG));
+    canardEncodeScalar(buffer, 1+16, 16, &converted);
+    converted = canardConvertNativeFloatToFloat16(get_register_float(RAW_MAG_SENSOR_Z_REG));
+    canardEncodeScalar(buffer, 1+16+16, 16, &converted);
 
-    // pressure data
-    //canardEncodeScalar(buffer, 8, 32, &g_bmp085_data[0].press);
-    //canardEncodeScalar(buffer, 8+32, 32, &g_bmp085_data[1].press);
-
-    // temperature data
-    //uint16_t converted = canardConvertNativeFloatToFloat16(g_bmp085_data[0].temp);
-    //canardEncodeScalar(buffer, 8+32+32, 16, &converted);
-    //converted = canardConvertNativeFloatToFloat16(g_bmp085_data[1].temp);
-    //canardEncodeScalar(buffer, 8+32+32+16, 16, &converted);
-
-    // skip static air temperature
-    // skip pitot temperature
     // skip covariance
 
     static uint8_t transfer_id;  // Note that the transfer ID variable MUST BE STATIC (or heap-allocated)!
 
     const int16_t bc_res = canardBroadcast(&canard,
-                                           UAVCAN_EQUIPMENT_AIR_DATA_RAW_DATA_TYPE_SIGNATURE,
-                                           UAVCAN_EQUIPMENT_AIR_DATA_RAW_DATA_TYPE_ID,
+                                           UAVCAN_AHRS_MAGNETIC_FIELD_STRENGTH2_TYPE_SIGNATURE,
+                                           UAVCAN_AHRS_MAGNETIC_FIELD_STRENGTH2_TYPE_ID,
                                            &transfer_id,
                                            CANARD_TRANSFER_PRIORITY_HIGH,
                                            buffer,
-                                           UAVCAN_EQUIPMENT_AIR_DATA_RAW_MAX_SIZE);
+                                           UAVCAN_AHRS_MAGNETIC_FIELD_STRENGTH2_RAW_MAX_SIZE);
     if (bc_res <= 0)
     {
         uart_printf_P(PSTR("Could not broadcast raw air data; error %d\n"), bc_res);
