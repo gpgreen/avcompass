@@ -16,6 +16,11 @@ extern void uart_printf_P(const char* str, ...);
 // main error entry
 extern void failed(uint8_t errcode);
 
+// define our implementation of assert function
+#ifndef NDEBUG
+extern void __compass_assert(const char* msg, const char* file, int line);
+#endif
+
 // assert
 #ifdef NDEBUG
 # define COMPASS_ASSERT(EX)

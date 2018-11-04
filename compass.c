@@ -206,18 +206,7 @@ ioinit(void)
                HARDWARE_REVISION, APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_NODE_NAME);
 
     // print out registers
-    uart_printf_P(PSTR("Contents of registers:\n"));
-    for (int i=0; i<REGISTER_LEN; ++i)
-    {
-        uart_printf("reg[%02d]: ", i);
-        uint8_t* byte = (uint8_t*)(&registers[i]);
-        for (int j=0; j<4; ++j)
-        {
-            uart_printf("%02x,", *(byte + j));
-        }
-        uart_printf("\n");
-    }
-    uart_printf("\n");
+    dump_register_state_uart();
 
 	// i2c hardware setup
 	i2c_init();

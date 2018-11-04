@@ -66,6 +66,7 @@ extern uint32_t registers[REGISTER_LEN];
 
 extern void initialize_registers(void);
 extern void write_registers_eeprom(void);
+extern void dump_register_state_uart(void);
 
 extern uint8_t get_register(int regnum, int shift);
 extern void set_register(int regnum, int shift, uint8_t val);

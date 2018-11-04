@@ -1,5 +1,6 @@
 #include <string.h>
 #include <avr/eeprom.h>
+#include <avr/pgmspace.h>
 #include <canard.h>
 #include "register.h"
 
@@ -37,6 +38,22 @@ void write_registers_eeprom(void)
 {
     eeprom_busy_wait();
     eeprom_write_block(registers, eeprom_register_addr, PERM_REGISTER_LEN * 4);
+}
+
+void dump_register_state_uart(void)
+{
+    uart_printf_P(PSTR("Contents of registers:\n"));
+    for (int i=0; i<REGISTER_LEN; ++i)
+    {
+        uart_printf("reg[%02d]: ", i);
+        uint8_t* byte = (uint8_t*)(&registers[i]);
+        for (int j=0; j<4; ++j)
+        {
+            uart_printf("%02x,", *(byte + j));
+        }
+        uart_printf("\n");
+    }
+    uart_printf("\n");
 }
 
 uint8_t get_register(int regnum, int shift)
