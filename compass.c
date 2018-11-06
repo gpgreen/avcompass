@@ -40,6 +40,12 @@ struct hmc5883l_dev_t compass_dev = {
 
 /*-----------------------------------------------------------------------*/
 
+// uart buffers
+uint8_t tx_fifo_buffer[TX_FIFO_BUFFER_SIZE];
+uint8_t rx_fifo_buffer[RX_FIFO_BUFFER_SIZE];
+
+/*-----------------------------------------------------------------------*/
+
 /*
  * Timer compare output 1A interrupt
  */
@@ -200,7 +206,8 @@ ioinit(void)
     TIMSK1 = _BV(OCIE1A);
 
 	// setup the serial hardware
-	uart_init();
+	uart_init(TX_FIFO_BUFFER_SIZE, tx_fifo_buffer,
+              RX_FIFO_BUFFER_SIZE, rx_fifo_buffer);
     
     uart_printf_P(PSTR("\nCompass\nHardware: %d Software: %d.%d\nName: %s\n-----------------------------\n"),
                HARDWARE_REVISION, APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_NODE_NAME);

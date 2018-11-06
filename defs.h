@@ -18,14 +18,13 @@
 
 /*-----------------------------------------------------------------------*/
 
-/* functions available */
-#define HAVE_UART_DEVICE                1
-
+/* uart */
 /* define baud rate for serial comm */
 #define BAUD                            115200
 
 /* size of uart buffers */
-#define FIFO_SIZE                       64
+#define TX_FIFO_BUFFER_SIZE             128
+#define RX_FIFO_BUFFER_SIZE             64
 
 /*-----------------------------------------------------------------------*/
 
