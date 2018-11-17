@@ -181,7 +181,7 @@ set(UTILS_LIB "${CMAKE_AVRLIBS_PATH}/utils/libavrutils-${AVR_MCU}.a")
 message(STATUS "avrcanlib: ${UTILS_LIB}")
 
 # libcanard
-set(CAN_LIB "${CMAKE_SOURCE_DIR}/../libs/libcanard/drivers/avr/avr-can-lib/libcan.a")
+set(CAN_LIB "${CMAKE_BINARY_DIR}/../${CMAKE_LIBCANARD_PATH}/avr-can-lib/libcan.a")
 message(STATUS "canlib: ${CAN_LIB}")
 
 avr_target_link_libraries(
