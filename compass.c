@@ -9,15 +9,15 @@
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <util/delay.h>
-#include <math.h>
+#include <stdio.h>
 
+#include "globals.h"
 #include "i2cmaster.h"
 #include "gpio.h"
 #include "register.h"
 #include "uart.h"
 #include "timer.h"
 #include "hmc5883l.h"
-#include "globals.h"
 #include "can_func.h"
 
 /*-----------------------------------------------------------------------*/
@@ -37,6 +37,11 @@ struct hmc5883l_dev_t compass_dev = {
     .sensor_sign = {1, 1, 1},
 };
 
+/*-----------------------------------------------------------------------*/
+
+// io
+static FILE uartstream = FDEV_SETUP_STREAM(uart_putchar, uart_getchar,
+                                           _FDEV_SETUP_RW);
 
 /*-----------------------------------------------------------------------*/
 
@@ -62,66 +67,11 @@ ISR(TIMER1_COMPA_vect)
 
 /*-----------------------------------------------------------------------*/
 
-// output stuff to uart
-
-static char buf[512];
-void uart_printf(const char* str, ...)
-{
-    va_list argptr;
-    va_start(argptr, str);
-    vsnprintf(buf, 512, str, argptr);
-    char* p = buf;
-    while (*p != 0)
-    {
-        uart_putchar(*p, stdout);
-        ++p;
-    }
-}
-
-void uart_printf_P(const char* str, ...)
-{
-    va_list argptr;
-    va_start(argptr, str);
-    vsnprintf_P(buf, 512, str, argptr);
-    char* p = buf;
-    while (*p != 0)
-    {
-        uart_putchar(*p, stdout);
-        ++p;
-    }
-}
-
-/*-----------------------------------------------------------------------*/
-
-// turn on/off the leds
-
-void led4_on(void)
-{
-	PORT_LED4 |= _BV(P_LED4);
-}
-
-void led4_off(void)
-{
-	PORT_LED4 &= ~_BV(P_LED4);
-}
-
-void led5_on(void)
-{
-	PORT_LED5 |= _BV(P_LED5);
-}
-
-void led5_off(void)
-{
-	PORT_LED5 &= ~_BV(P_LED5);
-}
-
-/*-----------------------------------------------------------------------*/
-
 // implementation of assert
 #ifndef NDEBUG
 void __compass_assert(const char* msg, const char* file, int line)
 {
-    uart_printf_P(PSTR("Assertion failed: %s at %s, line %d\nexecution halted\n"), msg, file, line);
+    printf_P(PSTR("Assertion failed: %s at %s, line %d\nexecution halted\n"), msg, file, line);
     failed(1);
 }
 #endif
@@ -180,8 +130,8 @@ system_start(void)
 {
     // first set the clock prescaler change enable
 	CLKPR = _BV(CLKPCE);
-	// now set the clock prescaler to clk / 2
-	CLKPR = _BV(CLKPS0);
+	// now set the clock prescaler to clk
+	CLKPR = 0;
 }
 
 /*-----------------------------------------------------------------------*/
@@ -208,8 +158,10 @@ ioinit(void)
 	// setup the serial hardware
 	uart_init(TX_FIFO_BUFFER_SIZE, tx_fifo_buffer,
               RX_FIFO_BUFFER_SIZE, rx_fifo_buffer);
+
+    uart_putchar('H', NULL);
     
-    uart_printf_P(PSTR("\nCompass\nHardware: %d Software: %d.%d\nName: %s\n-----------------------------\n"),
+    printf_P(PSTR("\nCompass\nHardware: %d Software: %d.%d\nName: %s\n-----------------------------\n"),
                HARDWARE_REVISION, APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_NODE_NAME);
 
     // print out registers
@@ -217,7 +169,7 @@ ioinit(void)
 
 	// i2c hardware setup
 	i2c_init();
-	uart_printf_P(PSTR("i2c initialized\n"));
+	printf_P(PSTR("i2c initialized\n"));
 
     // setup the magnetometer
     if (hmc5883l_init() == HMC5883L_FAIL)
@@ -225,7 +177,7 @@ ioinit(void)
         set_register(MAGNETOMETER_ENABLED_REG, MAGNETOMETER_ENABLED_SHIFT, 0);
 		failed(1);
     }
-	uart_printf_P(PSTR("hmc5883l initialized\n"));
+	printf_P(PSTR("hmc5883l initialized\n"));
 
     // run the self test
     if (hmc5883l_self_test())
@@ -234,62 +186,30 @@ ioinit(void)
 		failed(2);
     }
     set_register(MAGNETOMETER_ENABLED_REG, MAGNETOMETER_ENABLED_SHIFT, 1);
-	uart_printf_P(PSTR("hmc5883l self-test complete\n"));
+	printf_P(PSTR("hmc5883l self-test complete\n"));
 
     uint32_t bus_speed = get_register_u32(UAVCAN_BUS_SPEED_REG);
-    uart_printf_P(PSTR("can bus speed:%lu\n"), bus_speed);
+    printf_P(PSTR("can bus speed:%lu\n"), bus_speed);
 
     int err = initializeCanard(bus_speed);
     if (err)
     {
-        uart_printf_P(PSTR("can init failed err:%d\n"), err);
+        printf_P(PSTR("can init failed err:%d\n"), err);
         failed(4);
     }
-	uart_printf_P(PSTR("can init complete\n"));
+	printf_P(PSTR("can init complete\n"));
 
     uint8_t nodeid = get_register(UAVCAN_NODE_ID_REG, UAVCAN_NODE_ID_SHIFT);
     uint8_t state = get_register(COMPASS_STATE_REG, COMPASS_STATE_SHIFT);
     uint8_t health = get_register(UAVCAN_NODE_HEALTH_REG, UAVCAN_NODE_HEALTH_SHIFT);
     uint8_t sensor_id = get_register(MAGNETOMETER_SENSOR_ID_REG, MAGNETOMETER_SENSOR_ID_SHIFT);
 
-    uart_printf_P(PSTR("node id: %d can state:%d can health:%d sensor id:%d\n"), nodeid, state, health,
+    printf_P(PSTR("node id: %d can state:%d can health:%d sensor id:%d\n"), nodeid, state, health,
         sensor_id);
-    
-	uart_printf_P(PSTR("ioinit complete\n"));
+	printf_P(PSTR("ioinit complete\n"));
 
     led4_off();
 }
-
-#if 0
-/*-----------------------------------------------------------------------*/
-
-void compass_heading(float roll, float pitch)
-{
-	float cos_roll = cos(roll);
-	float sin_roll = sin(roll);
-	float cos_pitch = cos(pitch);
-	float sin_pitch = sin(pitch);
-
-	float x = -hmc5883l_raw_mag_data(&compass_dev, 0);
-	float y = hmc5883l_raw_mag_data(&compass_dev, 1);
-	float z = -hmc5883l_raw_mag_data(&compass_dev, 2);
-	
-	// tilt compensated mag x
-	float mag_x = x * cos_pitch + y * sin_roll * sin_pitch
-		+ z * cos_roll * sin_pitch;
-	// tilt compensated mag y
-	float mag_y = y * cos_roll - z * sin_roll;
-
-	// magnetic heading
-	float hdg = atan2(-mag_y, mag_x);
-	// convert to degrees
-	hdg *= 180.0 / M_PI;
-	// now convert to range 0 - 360
-	if (hdg < 0)
-		hdg += 360.0;
-    set_register_float(MAGNETIC_HEADING_REG, hdg);
-}
-#endif
 
 /*-----------------------------------------------------------------------*/
 
@@ -298,6 +218,10 @@ main(void)
 {
     system_start();
 
+    stdout = &uartstream;
+    stderr = &uartstream;
+    stdin = &uartstream;
+    
     initialize_registers();
 
     sei();
@@ -306,8 +230,6 @@ main(void)
 
     processNodeId();
 
-	//int calc_flag = 0;
-	
     while (1)
     {
         // 10 hz timer
@@ -317,7 +239,7 @@ main(void)
 
             int cenabled = get_register(MAGNETOMETER_ENABLED_REG, MAGNETOMETER_ENABLED_SHIFT);
 			if (cenabled && (hmc5883l_read_data(&compass_dev) != HMC5883L_OK))
-				failed(8);
+                failed(8);
 
             set_register_float(RAW_MAG_SENSOR_X_REG, hmc5883l_raw_mag_data(&compass_dev, 0));
             set_register_float(RAW_MAG_SENSOR_Y_REG, hmc5883l_raw_mag_data(&compass_dev, 1));
@@ -325,8 +247,7 @@ main(void)
 
 			if (cenabled)
             {
-				//calc_flag = 1;
-                sendRawMagData();
+                //sendRawMagData();
 			}
         }
 
@@ -338,15 +259,6 @@ main(void)
             process1HzTasks(jiffie());
         }
 
-#if 0
-		// calc_flag set, do the magnetic heading
-		if (calc_flag)
-		{
-			calc_flag = 0;
-			compass_heading(0.0, 0.0);
-		}
-#endif
-        
         // every loop
         processTxRxOnce();
         

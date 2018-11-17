@@ -59,7 +59,7 @@ endif(NOT CMAKE_BUILD_TYPE)
 ##################################################################################
 # needs to be defined for AVR toolchain
 ##################################################################################
-set(MCU_SPEED "8000000UL")
+set(MCU_SPEED "16000000UL")
 
 ##################################################################################
 # some cmake cross-compile necessities
@@ -149,6 +149,7 @@ include_directories(
 add_avr_executable(
    compass
    compass.c
+#   blink.c
    gpio.c
    gpio.h
    can_func.c
@@ -189,6 +190,6 @@ avr_target_link_libraries(
 	${I2CMASTER_LIB}
 	${UTILS_LIB}
 	${CAN_LIB}
-	${M_LIB}
+#	${M_LIB}
 )
 

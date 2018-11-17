@@ -20,11 +20,11 @@
 
 /* uart */
 /* define baud rate for serial comm */
-#define BAUD                            115200
+#define BAUD                            230400
 
 /* size of uart buffers */
-#define TX_FIFO_BUFFER_SIZE             128
-#define RX_FIFO_BUFFER_SIZE             64
+#define TX_FIFO_BUFFER_SIZE             64
+#define RX_FIFO_BUFFER_SIZE             8
 
 /*-----------------------------------------------------------------------*/
 

@@ -9,10 +9,6 @@ extern void led4_off(void);
 extern void led5_on(void);
 extern void led5_off(void);
 
-// logging to uart
-extern void uart_printf(const char* str, ...);
-extern void uart_printf_P(const char* str, ...);
-
 // main error entry
 extern void failed(uint8_t errcode);
 
