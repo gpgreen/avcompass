@@ -17,6 +17,7 @@
 #include "register.h"
 #include "uart.h"
 #include "timer.h"
+#include "timer1.h"
 #include "hmc5883l.h"
 #include "can_func.h"
 
@@ -25,7 +26,7 @@
 // timer flags
 
 // 10 hz timer flag
-volatile uint8_t g_timer10_set;
+volatile uint8_t g_timer10hz_set;
 
 // 1 hz timer flag
 volatile uint8_t g_timer1hz_set;
@@ -51,19 +52,26 @@ uint8_t rx_fifo_buffer[RX_FIFO_BUFFER_SIZE];
 
 /*-----------------------------------------------------------------------*/
 
-/*
- * Timer compare output 1A interrupt
- */
-ISR(TIMER1_COMPA_vect)
+void timer1_compareA(void)
 {
+    g_timer10hz_set = 1;
+    
     static int count = 0;
-    g_timer10_set = 1;
-    if (++count == 10)
+    if (++count == 9)
     {
         g_timer1hz_set = 1;
         count = 0;
     }
 }
+
+static timer1_init_t timer1_settings = {
+    .scale = CLK256,
+    .compareA_cb = timer1_compareA,
+    .compareB_cb = 0,
+    // compare A triggers at 10Hz
+    .compareA_val = (F_CPU / 10 / 256),
+    .compareB_val = 0,
+};
 
 /*-----------------------------------------------------------------------*/
 
@@ -91,9 +99,9 @@ failed(uint8_t err)
 	while (1)
     {
 		// 10 hz timer
-		if (g_timer10_set)
+		if (g_timer10hz_set)
 		{
-			g_timer10_set = 0;
+			g_timer10hz_set = 0;
             if (delay--)
                 continue;
             delay = 2;
@@ -143,6 +151,8 @@ ioinit(void)
 
 	timer_init();
 
+    timer1_init(&timer1_settings);
+    
 	led4_on();
 	
     // setup the 10 hz timer
@@ -230,12 +240,14 @@ main(void)
 
     processNodeId();
 
+    process1HzTasks(jiffie());
+    
     while (1)
     {
         // 10 hz timer
-        if (g_timer10_set)
+        if (g_timer10hz_set)
         {
-            g_timer10_set = 0;
+            g_timer10hz_set = 0;
 
             int cenabled = get_register(MAGNETOMETER_ENABLED_REG, MAGNETOMETER_ENABLED_SHIFT);
 			if (cenabled && (hmc5883l_read_data(&compass_dev) != HMC5883L_OK))
@@ -247,7 +259,7 @@ main(void)
 
 			if (cenabled)
             {
-                //sendRawMagData();
+                sendRawMagData();
 			}
         }
 
